@@ -37,6 +37,8 @@ class FreeAgencyBot(commands.Bot):
 
         guild = discord.Object(id=SERVER_ID)
 
+        self.tree.copy_global_to(guild=guild)
+
         synced = await self.tree.sync(
             guild=guild
         )
