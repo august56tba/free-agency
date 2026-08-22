@@ -1,14 +1,12 @@
 import discord
-from discord import app_commands  # <-- ESSA LINHA ESTAVA FALTANDO!
 from discord.ext import commands
 import json
 import os
 from dotenv import load_dotenv
 
-# ============ CARREGAR VARIÁVEIS DE AMBIENTE ============
+# ============ CARREGAR VARIÁVEIS ============
 load_dotenv()
 
-# ============ CONFIGURAÇÕES DO .ENV ============
 Token = os.getenv('DISCORD_TOKEN')
 ChannelId = int(os.getenv('CHANNEL_ID'))
 ManagerRule_ID = int(os.getenv('MANAGER_ROLE_ID'))
@@ -34,166 +32,168 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# ============ COMANDO SLASH: /freeagent ============
-@bot.tree.command(name="freeagent", description="📢 Anuncie-se como Free Agent")
-@app_commands.describe(
-    mensagem="Sua mensagem principal (ex: jogador versátil, experiência...)",
-    experiencias="Suas experiências (ex: MR25, PRS, VEF, NBA...)",
-    motivo="Motivo de estar na free agency (ex: buscando novos desafios)"
-)
-async def freeagent_slash(
-    interaction: discord.Interaction,
-    mensagem: str,
-    experiencias: str,
-    motivo: str
-):
-    """Comando slash para anunciar free agency"""
+# ============ COMANDO PARA REGISTRAR EXPERIÊNCIA ============
+@bot.command(name='setexp')
+async def set_experience(ctx):
+    """Registra suas experiências"""
     
-    # Salvar os dados do jogador
+    class ExpModal(discord.ui.Modal, title='📝 Minhas Experiências'):
+        experiencias = discord.ui.TextInput(
+            label='🌍 Experiências (ligas/equipes)',
+            placeholder='Ex: MR25, PRS, VEF Riga, NBA 2024',
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=500
+        )
+        
+        motivo = discord.ui.TextInput(
+            label='💭 Motivo da Free Agency',
+            placeholder='Ex: Buscando novos desafios',
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=300
+        )
+        
+        async def on_submit(self, interaction: discord.Interaction):
+            data = load_data()
+            data[str(interaction.user.id)] = {
+                'experiencias': self.experiencias.value,
+                'motivo': self.motivo.value
+            }
+            save_data(data)
+            
+            embed = discord.Embed(
+                title='✅ Experiência Registrada!',
+                description=f'{interaction.user.mention}, suas experiências foram salvas!',
+                color=discord.Color.green()
+            )
+            embed.add_field(name='🌍 Experiências', value=self.experiencias.value, inline=False)
+            embed.add_field(name='💭 Motivo', value=self.motivo.value, inline=False)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    await ctx.send_modal(ExpModal())
+
+# ============ COMANDO FREEAGENT ============
+@bot.command(name='freeagent')
+async def freeagent(ctx, *, mensagem: str = "Sem mensagem adicional"):
+    """Anuncia na free agency"""
+    
     data = load_data()
-    data[str(interaction.user.id)] = {
-        'experiencias': experiencias,
-        'motivo': motivo,
-        'mensagem': mensagem,
-        'anunciado_em': str(interaction.created_at)
-    }
-    save_data(data)
+    player_data = data.get(str(ctx.author.id))
     
-    # Criar o embed
     embed = discord.Embed(
-        title=f'⚡ {interaction.user.display_name} é um Free Agent!',
+        title=f'⚡ {ctx.author.display_name} é um Free Agent!',
         description=mensagem,
         color=discord.Color.blue()
     )
     
-    # ===== AVATAR CIRCULAR NA DIREITA =====
-    if interaction.user.avatar:
-        embed.set_thumbnail(url=interaction.user.avatar.url)
+    # Avatar na direita
+    if ctx.author.avatar:
+        embed.set_thumbnail(url=ctx.author.avatar.url)
     
-    # ===== ADICIONAR EXPERIÊNCIAS E MOTIVO =====
-    embed.add_field(
-        name='🌍 **Experiências**',
-        value=experiencias,
-        inline=False
-    )
+    # Mostrar experiências se tiver
+    if player_data:
+        embed.add_field(
+            name='🌍 **Experiências**',
+            value=player_data.get('experiencias', '*Nenhuma*'),
+            inline=False
+        )
+        embed.add_field(
+            name='💭 **Motivo**',
+            value=player_data.get('motivo', '*Não informado*'),
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name='⚠️ **Aviso**',
+            value='Use `.setexp` para registrar suas experiências!',
+            inline=False
+        )
     
-    embed.add_field(
-        name='💭 **Motivo da Free Agency**',
-        value=motivo,
-        inline=False
-    )
-    
-    embed.add_field(
-        name='👤 **Jogador**',
-        value=interaction.user.mention,
-        inline=True
-    )
-    embed.add_field(
-        name='📅 **Status**',
-        value='🟢 Disponível',
-        inline=True
-    )
-    
-    embed.set_footer(text='📩 Clique em "Contract" para demonstrar interesse')
+    embed.add_field(name='👤 **Jogador**', value=ctx.author.mention, inline=True)
+    embed.add_field(name='📅 **Status**', value='🟢 Disponível', inline=True)
     
     # ============ BOTÃO CONTRACT ============
     async def contract_callback(interact: discord.Interaction):
-        if not any(role.id == int(ManagerRule_ID) for role in interact.user.roles):
-            await interact.response.send_message(
-                '❌ Você não tem permissão para enviar contratos!',
-                ephemeral=True
-            )
+        if not any(role.id == ManagerRule_ID for role in interact.user.roles):
+            await interact.response.send_message('❌ Sem permissão!', ephemeral=True)
             return
         
-        if interact.user.id == interaction.user.id:
-            await interact.response.send_message(
-                '❌ Você não pode enviar contrato para si mesmo!',
-                ephemeral=True
-            )
+        if interact.user.id == ctx.author.id:
+            await interact.response.send_message('❌ Não pode contratar a si mesmo!', ephemeral=True)
             return
         
         try:
-            dm_embed = discord.Embed(
-                title='📩 Oferta de Contrato!',
-                description=f'O manager **{interact.user.display_name}** demonstrou interesse em você!',
-                color=discord.Color.green()
-            )
-            dm_embed.add_field(
-                name='💬 Mensagem do Manager',
-                value=f'*"{mensagem}"*',
-                inline=False
-            )
-            
-            await interaction.user.send(embed=dm_embed)
-            
-            await interact.response.send_message(
-                f'✅ Contrato enviado para {interaction.user.mention}!',
-                ephemeral=True
-            )
-        except discord.Forbidden:
-            await interact.response.send_message(
-                '❌ O jogador tem DMs desativadas!',
-                ephemeral=True
-            )
+            await ctx.author.send(f'📩 Contrato de {interact.user.display_name}!\n💬 {mensagem}')
+            await interact.response.send_message(f'✅ Contrato enviado!', ephemeral=True)
+        except:
+            await interact.response.send_message('❌ DMs desativadas!', ephemeral=True)
     
     view = discord.ui.View()
-    contract_button = discord.ui.Button(label="📩 Contract", style=discord.ButtonStyle.green)
-    contract_button.callback = contract_callback
-    view.add_item(contract_button)
+    button = discord.ui.Button(label="📩 Contract", style=discord.ButtonStyle.green)
+    button.callback = contract_callback
+    view.add_item(button)
     
-    exp_button = discord.ui.Button(label="📊 Ver Experiência", style=discord.ButtonStyle.blurple)
+    # Botão Ver Experiência
+    exp_button = discord.ui.Button(label="📊 Ver Exp", style=discord.ButtonStyle.blurple)
     async def exp_callback(interact: discord.Interaction):
         exp_embed = discord.Embed(
-            title=f'📊 Experiências de {interaction.user.display_name}',
+            title=f'📊 {ctx.author.display_name}',
             color=discord.Color.purple()
         )
-        if interaction.user.avatar:
-            exp_embed.set_thumbnail(url=interaction.user.avatar.url)
-        exp_embed.add_field(name='🌍 **Experiências**', value=experiencias, inline=False)
-        exp_embed.add_field(name='💭 **Motivo da Free Agency**', value=motivo, inline=False)
+        if ctx.author.avatar:
+            exp_embed.set_thumbnail(url=ctx.author.avatar.url)
+        
+        if player_data:
+            exp_embed.add_field(name='🌍 Experiências', value=player_data.get('experiencias', '*Nenhuma*'), inline=False)
+            exp_embed.add_field(name='💭 Motivo', value=player_data.get('motivo', '*Não informado*'), inline=False)
+        else:
+            exp_embed.description = '❌ Sem experiências registradas'
+        
         await interact.response.send_message(embed=exp_embed, ephemeral=True)
     exp_button.callback = exp_callback
     view.add_item(exp_button)
     
-    channel = bot.get_channel(int(ChannelId))
+    channel = bot.get_channel(ChannelId)
     if channel:
         await channel.send(embed=embed, view=view)
-        await interaction.response.send_message(
-            f'✅ Anúncio enviado para {channel.mention}!',
-            ephemeral=True
-        )
+        await ctx.send(f'✅ Anunciado em {channel.mention}!')
     else:
-        await interaction.response.send_message(
-            '❌ Canal de free agency não configurado!',
-            ephemeral=True
-        )
+        await ctx.send(embed=embed, view=view)
 
-# ============ SINCRONIZAR COMANDOS ============
+# ============ COMANDO VER EXPERIÊNCIA ============
+@bot.command(name='exp')
+async def view_exp(ctx, member: discord.Member = None):
+    target = member or ctx.author
+    data = load_data()
+    player_data = data.get(str(target.id))
+    
+    embed = discord.Embed(
+        title=f'📊 {target.display_name}',
+        color=discord.Color.blue()
+    )
+    if target.avatar:
+        embed.set_thumbnail(url=target.avatar.url)
+    
+    if player_data:
+        embed.add_field(name='🌍 Experiências', value=player_data.get('experiencias', '*Nenhuma*'), inline=False)
+        embed.add_field(name='💭 Motivo', value=player_data.get('motivo', '*Não informado*'), inline=False)
+    else:
+        embed.description = '❌ Nenhuma experiência registrada'
+    
+    await ctx.send(embed=embed)
+
+# ============ EVENTO READY ============
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado como {bot.user.name}')
     print(f'📡 Em {len(bot.guilds)} servidores')
-    
-    try:
-        synced = await bot.tree.sync()
-        print(f'✅ {len(synced)} comandos slash sincronizados:')
-        for cmd in synced:
-            print(f'   • /{cmd.name}')
-    except Exception as e:
-        print(f'❌ Erro ao sincronizar comandos: {e}')
-    
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name=f"/freeagent | Free Agency"
-        )
-    )
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=".freeagent | Free Agency"))
 
-# ============ INICIALIZAÇÃO ============
+# ============ INICIALIZAR ============
 if __name__ == '__main__':
     try:
         bot.run(Token)
-    except discord.LoginFailure:
-        print('❌ TOKEN INVÁLIDO!')
     except Exception as e:
-        print(f'❌ ERRO FATAL: {e}')
+        print(f'❌ ERRO: {e}')
