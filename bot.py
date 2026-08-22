@@ -1,11 +1,11 @@
 import discord
 from discord.ext import commands
-
+import os
 # ============================================================
 # CONFIGURAÇÃO
 # ============================================================
 
-TOKEN = "COLOQUE_SEU_TOKEN_AQUI"
+TOKEN = os.getenv("TOKEN")
 
 SERVER_ID = 1496579366677909704
 FREE_AGENCY_CHANNEL_ID = 1496579368493777097
